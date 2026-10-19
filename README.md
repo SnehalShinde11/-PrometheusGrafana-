@@ -1,275 +1,325 @@
-# GCP VM Monitoring with Prometheus and Grafana
+# Project 5.1 – Implementing Comprehensive Monitoring with Prometheus and Grafana
 
-This project demonstrates infrastructure monitoring on Google Cloud using **Prometheus, Grafana, Node Exporter, and cAdvisor**. Follow the steps below to deploy the stack on two Compute Engine VMs. The configuration files are maintained in this repository, so you can clone the repo instead of copying configuration examples from this README.
+## 1. Project Overview
 
-## What you will build
+This project implements a comprehensive monitoring solution on Google Cloud Platform (GCP) using Prometheus, Grafana, Node Exporter, and cAdvisor.
 
-- **monitoring-vm:** Prometheus, Grafana, and cAdvisor
-- **target-vm:** Node Exporter for Linux host metrics
-- **Prometheus:** collects metrics from itself, Node Exporter, and cAdvisor
-- **Grafana:** visualizes collected metrics and supports dashboards and variables
-- **Alert rule:** a sample high-CPU rule is provided in the repository
+The objective is to monitor infrastructure and container-level metrics, visualize system performance, and configure alerts to identify potential resource utilization issues.
 
-## Repository files
+The implementation uses two Google Compute Engine virtual machines to separate the monitoring stack from the target system.
 
-Use the existing files in this repository:
+## 2. Problem Statement
 
-- [prometheus.yml](./prometheus.yml) — scrape targets and alert rule file reference
-- [alerts.yml](./alerts.yml) — Prometheus high-CPU alert rule
+Modern applications require continuous monitoring to maintain availability, performance, and reliability. Without centralized monitoring and visualization, identifying high CPU utilization, memory consumption, and infrastructure issues can be difficult.
 
-If you change a file, keep it in the cloned repository and copy the updated file to the location mounted into the container.
+This project addresses these challenges by implementing:
 
-## Prerequisites
+- Centralized metric collection using Prometheus.
+- Host-level monitoring using Node Exporter.
+- Container-level monitoring using cAdvisor.
+- Metrics visualization through Grafana dashboards.
+- Alert rules to detect high resource utilization.
+- Validation of monitoring targets and metric collection.
 
-- A Google Cloud project with Compute Engine enabled
-- Permission to create VM instances and VPC firewall rules
-- SSH access to both VMs
-- Git and Docker installed on both VMs
+## 3. Solution Approach
 
-## 1. Create the GCP VMs
+The solution uses a two-VM architecture on GCP.
 
-Create two VMs in **us-central1**, zone **us-central1-a**, using Ubuntu 24.04 LTS.
+### Monitoring VM (`monitoring-vm`)
 
-| Setting | monitoring-vm | target-vm |
+- **Prometheus:** Collects and stores metrics on port `9090`.
+- **Grafana:** Visualizes metrics on port `3000`.
+- **cAdvisor:** Collects container metrics on port `8080`.
+
+### Target VM (`target-vm`)
+
+- **Node Exporter:** Exposes host-level metrics on port `9100`.
+
+Prometheus scrapes metrics from its own endpoint, the Node Exporter running on the target VM, and cAdvisor running on the monitoring VM. Grafana connects to Prometheus as its data source.
+
+### Monitoring Targets
+
+| Target | Endpoint | Purpose |
 |---|---|---|
-| Role | Prometheus, Grafana, cAdvisor | Node Exporter |
-| Machine type | e2-standard-2 | e2-medium |
-| Boot disk | Balanced persistent disk, 30 GB | Balanced persistent disk, 20 GB |
-| Network tag | monitoring | target |
+| Prometheus | `localhost:9090` | Prometheus self-monitoring |
+| Node Exporter | `10.128.0.29:9100` | Target VM host metrics |
+| cAdvisor | `cadvisor:8080` | Container resource metrics |
 
-### Configure firewall access
+## 4. Prerequisites and Dependencies
 
-Create VPC firewall rules for the required traffic:
+Before implementing the project, ensure the following are available:
 
-| Service | Port | Recommended access |
-|---|---:|---|
-| Prometheus UI | TCP 9090 | Trusted admin IP/CIDR only |
-| Grafana UI | TCP 3000 | Trusted admin IP/CIDR only |
-| cAdvisor | TCP 8080 | Keep private; do not expose publicly |
-| Node Exporter | TCP 9100 | Monitoring VM's internal IP/CIDR only |
+- A Google Cloud Platform project with billing enabled.
+- Permissions to create Compute Engine VMs and firewall rules.
+- Two Ubuntu 24.04 virtual machines.
+- Docker installed on the monitoring VM.
+- Node Exporter installed and running on the target VM.
+- Prometheus and Grafana deployed on the monitoring VM.
+- Access to the required monitoring ports through appropriately restricted firewall rules.
+- Basic familiarity with Linux, Docker, PromQL, and Grafana.
 
-Ensure each rule targets the correct network tag. For Node Exporter, use the current internal IP of monitoring-vm as the source. VM addresses can differ from examples, so use the current addresses shown in Compute Engine.
+## 5. Repository Structure
 
-## 2. Install Docker
+Clone the repository and inspect its existing configuration files before making changes.
 
-Run on **both VMs**:
+```text
+.
+├── prometheus.yml
+├── alerts.yml
+└── README.md
+```
 
-    sudo apt update
-    sudo apt upgrade -y
-    sudo apt install -y docker.io git
-    sudo systemctl enable --now docker
-    sudo systemctl status docker --no-pager
-    docker --version
-    git --version
+### Configuration Responsibilities
 
-## 3. Clone this repository on monitoring-vm
+- `prometheus.yml` — Prometheus scrape configuration and alert rule file references.
+- `alerts.yml` — Alerting rules, including high CPU utilization.
+- `README.md` — Project documentation and deployment instructions.
 
-SSH into monitoring-vm, then run:
+The README references the existing configuration files rather than duplicating their YAML definitions.
 
-    git clone https://github.com/SnehalShinde11/-PrometheusGrafana-.git
-    cd -- -PrometheusGrafana-
-    ls -l
+## 6. Step-by-Step Implementation
 
-The repository should contain prometheus.yml and alerts.yml.
+### Step 1: Prepare the GCP Infrastructure
 
-### Update the target address
+Create and configure two Google Compute Engine virtual machines.
 
-Open the existing Prometheus file:
+**Monitoring VM**
 
-    nano prometheus.yml
+- Name: `monitoring-vm`
+- Machine type: `e2-standard-2`
+- Operating system: Ubuntu 24.04
+- Purpose: Host Prometheus, Grafana, and cAdvisor.
 
-Update the Node Exporter target to match the **current internal IP address of target-vm**. Save the file. You do not need to create a new configuration from scratch.
+**Target VM**
 
-## 4. Prepare the configuration and Docker network
+- Name: `target-vm`
+- Machine type: `e2-medium`
+- Operating system: Ubuntu 24.04
+- Purpose: Host Node Exporter and expose system metrics.
 
-On monitoring-vm, copy the repository's existing configuration files into the paths that Prometheus will use:
+Verify that both VMs are running and note their internal and external IP addresses.
 
-    sudo mkdir -p /opt/prometheus
-    sudo cp prometheus.yml /opt/prometheus/prometheus.yml
-    sudo cp alerts.yml /opt/prometheus/alerts.yml
+Configure firewall rules to allow only the required monitoring traffic. Prefer internal IP communication between the instances.
 
-Create a shared Docker network for Prometheus, Grafana, and cAdvisor:
+### Step 2: Clone the Repository
 
-    sudo docker network create monitoring
+Connect to the monitoring VM using SSH.
 
-If the network already exists, inspect it with:
+Install Git if it is not already available:
 
-    sudo docker network inspect monitoring
+```bash
+sudo apt update
+sudo apt install -y git
+```
 
-## 5. Deploy Prometheus
+Clone the project repository:
 
-Validate the configuration files copied from the repository:
+```bash
+git clone https://github.com/SnehalShinde11/-PrometheusGrafana-.git
+cd -- -PrometheusGrafana-
+```
 
-    sudo docker run --rm \
-      --entrypoint /bin/promtool \
-      -v /opt/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
-      -v /opt/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro \
-      prom/prometheus \
-      check config /etc/prometheus/prometheus.yml
+Verify the repository contents:
 
-Start Prometheus on the shared Docker network and mount both repository configuration files:
+```bash
+ls -la
+```
 
-    sudo docker run -d \
-      --name prometheus \
-      --restart unless-stopped \
-      --network monitoring \
-      -p 9090:9090 \
-      -v /opt/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
-      -v /opt/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro \
-      prom/prometheus
+Confirm that the Prometheus configuration and rule files are present at their expected locations.
 
-Verify the service:
+### Step 3: Install Docker on the Monitoring VM
 
-    curl http://localhost:9090/-/healthy
-    sudo docker logs prometheus --tail 30
+Check whether Docker is installed:
 
-Open http://<MONITORING_VM_EXTERNAL_IP>:9090 and navigate to **Status → Targets** to check scrape health.
+```bash
+docker --version
+```
 
-## 6. Deploy Node Exporter on target-vm
+If Docker is not installed, install it using the official Docker installation instructions for Ubuntu.
 
-SSH into target-vm and run:
+Enable and start the Docker service:
 
-    sudo docker run -d \
-      --name node-exporter \
-      --restart unless-stopped \
-      --net="host" \
-      --pid="host" \
-      -v "/:/host:ro,rslave" \
-      prom/node-exporter \
-      --path.rootfs=/host
+```bash
+sudo systemctl enable --now docker
+```
 
-Verify metrics on target-vm:
+Verify that Docker is running:
 
-    curl http://localhost:9100/metrics
+```bash
+sudo systemctl status docker
+```
 
-From monitoring-vm, test connectivity using the target VM's internal IP:
+### Step 4: Deploy Prometheus
 
-    curl http://<TARGET_VM_INTERNAL_IP>:9100/metrics | head
+Configure Prometheus using the repository's existing `prometheus.yml` and `alerts.yml` files.
 
-If the request fails, check the firewall source range, target network tag, internal IP, and Node Exporter container status.
+Ensure that the configuration references the correct paths and that all required files are mounted into the Prometheus container.
 
-## 7. Deploy cAdvisor on monitoring-vm
+Start or recreate the Prometheus container using the repository's deployment configuration.
 
-Run cAdvisor on the same Docker network as Prometheus:
+Verify the container:
 
-    sudo docker run -d \
-      --name cadvisor \
-      --restart unless-stopped \
-      --network monitoring \
-      -p 8080:8080 \
-      -v /:/rootfs:ro \
-      -v /var/run:/var/run:ro \
-      -v /sys:/sys:ro \
-      -v /var/lib/docker/:/var/lib/docker:ro \
-      gcr.io/cadvisor/cadvisor:latest
+```bash
+sudo docker ps
+```
 
-Verify that cAdvisor exposes metrics:
+Validate the configuration:
 
-    curl http://localhost:8080/metrics | head
-    sudo docker exec prometheus wget -qO- http://cadvisor:8080/metrics | head
+```bash
+sudo docker exec prometheus \
+  promtool check config /etc/prometheus/prometheus.yml
+```
 
-## 8. Deploy Grafana
+### Step 5: Deploy Grafana
 
-On monitoring-vm, create persistent storage and start Grafana on the shared network:
+Start Grafana using the project's existing deployment configuration.
 
-    sudo docker volume create grafana-storage
+Verify that the container is running:
 
-    sudo docker run -d \
-      --name grafana \
-      --restart unless-stopped \
-      --network monitoring \
-      -p 3000:3000 \
-      -v grafana-storage:/var/lib/grafana \
-      grafana/grafana
+```bash
+sudo docker ps
+```
 
-Check its health:
+Open Grafana in a browser:
 
-    curl http://localhost:3000/api/health
-    sudo docker ps
+```text
+http://<MONITORING_VM_EXTERNAL_IP>:3000
+```
 
-Open http://<MONITORING_VM_EXTERNAL_IP>:3000. Initial Grafana credentials are commonly admin/admin; change the password when prompted and never keep the default password.
+Sign in using the configured credentials.
 
-### Add Prometheus as the Grafana data source
+Navigate to **Connections → Data sources**, add Prometheus, configure the reachable Prometheus URL, and select **Save & test**.
 
-In Grafana:
+### Step 6: Deploy cAdvisor
 
-1. Open **Connections → Data sources**.
-2. Select **Add data source → Prometheus**.
-3. Set the URL to **http://prometheus:9090**.
-4. Click **Save & test**.
+Start cAdvisor on the monitoring VM using the project's container deployment configuration.
 
-Use the container name because Grafana and Prometheus are separate containers. The shared Docker network allows Grafana to resolve Prometheus by name.
+Verify the container:
 
-## 9. Verify monitoring and alerts
+```bash
+sudo docker ps
+```
 
-### Verify Prometheus targets
+Check whether its metrics endpoint is responding:
 
-Open Prometheus at http://<MONITORING_VM_EXTERNAL_IP>:9090, then select **Status → Targets**. Confirm that the Prometheus, Node Exporter, and cAdvisor targets are **UP**.
+```bash
+curl http://localhost:8080/metrics
+```
 
-Run this PromQL query in Prometheus or Grafana Explore:
+Confirm that the Prometheus scrape configuration uses the correct cAdvisor endpoint, such as `cadvisor:8080` when the containers share a Docker network.
 
-    up
+### Step 7: Install Node Exporter on the Target VM
 
-A value of 1 means a target is up; 0 means its scrape is failing.
+Connect to `target-vm` through SSH.
 
-### Verify the alert rule
+Install and configure Node Exporter using the project's selected installation method.
 
-The sample HighCPUUsage rule is defined in the repository's alerts.yml file and mounted into Prometheus during deployment. Open:
+Start the service and verify that it is running:
 
-http://<MONITORING_VM_EXTERNAL_IP>:9090/alerts
+```bash
+sudo systemctl status node_exporter
+```
 
-Prometheus evaluates the rule and shows its state. Notification delivery requires a separately configured receiver such as Alertmanager.
+Check the metrics endpoint locally:
 
-## 10. Create Grafana dashboards
+```bash
+curl http://localhost:9100/metrics
+```
 
-In Grafana, go to **Dashboards → New → New dashboard → Add visualization**, then select Prometheus as the data source.
+Confirm that metrics are returned successfully.
 
-Example queries for panels:
+### Step 8: Configure Prometheus Scrape Targets
 
-| Metric | PromQL |
+Verify the scrape targets in the existing `prometheus.yml`.
+
+The project uses the following endpoints:
+
+| Target | Endpoint | Purpose |
+|---|---|---|
+| Prometheus | `localhost:9090` | Self-monitoring |
+| Node Exporter | `10.128.0.29:9100` | Target VM metrics |
+| cAdvisor | `cadvisor:8080` | Container metrics |
+
+Replace example IP addresses or service names if your actual infrastructure differs.
+
+Reload or restart Prometheus after validating any configuration changes.
+
+### Step 9: Verify Monitoring Targets
+
+Open the Prometheus targets page:
+
+```text
+http://<MONITORING_VM_EXTERNAL_IP>:9090/targets
+```
+
+Verify that all expected targets show `UP`.
+
+If a target shows `DOWN`, check service status, firewall rules, network connectivity, and endpoint configuration.
+
+### Step 10: Configure Grafana Dashboards
+
+Open the Grafana interface and create dashboards using Prometheus as the data source.
+
+Include visualizations for:
+
+- CPU utilization
+- Memory utilization
+- System load
+- Network traffic
+- Container CPU and memory usage
+
+Use suitable PromQL queries to confirm that the panels display data.
+
+### Step 11: Configure and Validate Alerting Rules
+
+Review the existing `alerts.yml` file and confirm that the `HighCPUUsage` rule is configured to trigger when CPU utilization exceeds 80% for five minutes.
+
+Validate the rules:
+
+```bash
+sudo docker exec prometheus \
+  promtool check rules /etc/prometheus/alerts.yml
+```
+
+Check the alert status in the Prometheus **Alerts** page.
+
+If Alertmanager is configured, verify its routing and notification settings separately.
+
+### Step 12: Verify the Complete Monitoring Setup
+
+Perform a final end-to-end check:
+
+1. Confirm that all monitoring containers are running.
+2. Verify that Node Exporter is running on the target VM.
+3. Confirm that Prometheus targets are `UP`.
+4. Confirm that Grafana can query Prometheus.
+5. Verify that dashboards display the collected metrics.
+6. Confirm that alert rules are loaded and evaluated.
+7. Review logs if any component is not functioning correctly.
+
+## 7. Security Considerations
+
+- Restrict access to Prometheus and Grafana using firewall rules.
+- Allow exporter access only from the required monitoring sources.
+- Avoid exposing internal monitoring endpoints publicly without appropriate controls.
+- Use strong credentials for Grafana and other administrative services.
+- Do not commit passwords, service account keys, access tokens, or other secrets to GitHub.
+- Prefer internal VM communication for metric scraping.
+
+## 8. Troubleshooting
+
+| Issue | Recommended Action |
 |---|---|
-| CPU usage (%) | 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) |
-| Memory usage (%) | 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) |
-| Disk read throughput | rate(node_disk_read_bytes_total[5m]) |
-| Network receive throughput | rate(node_network_receive_bytes_total[5m]) |
+| Prometheus target is `DOWN` | Check the target service, endpoint, firewall rules, and connectivity. |
+| Grafana data source fails | Verify the Prometheus URL and network reachability from Grafana. |
+| Node Exporter metrics are missing | Confirm that Node Exporter is running and port `9100` is reachable. |
+| cAdvisor metrics are missing | Check the container status, port `8080`, and Prometheus scrape configuration. |
+| Prometheus configuration fails | Run `promtool check config` and inspect the configuration and rule-file paths. |
+| Alert does not fire | Check the expression, available metrics, threshold, evaluation interval, and pending duration. |
+| Dashboard panels show no data | Verify the selected data source, PromQL query, time range, and metric availability. |
 
-Set the visualization to **Time series**, provide a descriptive title, and save the dashboard. You can also import the community **Node Exporter Full** dashboard using ID **1860**.
+## Assignment Details
 
-### Add a host dropdown variable
+**Assignment:** Project 5.1 – Implementing Comprehensive Monitoring with Prometheus and Grafana
 
-To filter panels by host:
-
-1. Open dashboard settings and select **Variables → Add variable**.
-2. Name the variable instance and label it Host.
-3. Choose **Query** as the type and select your Prometheus data source.
-4. Configure the query to return instance label values.
-5. Update panel queries to filter on instance=~"$instance".
-
-## Troubleshooting
-
-- **A target is DOWN:** Check the internal IP, exporter status, VPC firewall source range, and network tags.
-- **Grafana cannot connect to Prometheus:** Confirm both containers are attached to the monitoring Docker network and the data-source URL is http://prometheus:9090.
-- **cAdvisor target is DOWN:** Confirm cAdvisor is running on the shared network and the repository's prometheus.yml uses cadvisor:8080.
-- **Configuration validation fails:** Validate the files copied from the repository with promtool check config and check file paths and YAML indentation.
-- **Updated configuration is not active:** Copy the updated file from the clone to /opt/prometheus and restart or recreate the Prometheus container as appropriate.
-
-## Security recommendations
-
-- Restrict web UIs with firewall rules and trusted source CIDRs.
-- Keep Node Exporter and cAdvisor private; expose only what you need.
-- Change the initial Grafana password.
-- Never commit credentials, private keys, or service-account keys to the repository.
-- Keep the operating system and container images updated.
-
-## Useful links
-
-- [Repository](https://github.com/SnehalShinde11/-PrometheusGrafana-)
-- [Prometheus configuration file](./prometheus.yml)
-- [Prometheus alert rules](./alerts.yml)
-- [Prometheus documentation](https://prometheus.io/docs/)
-- [Grafana documentation](https://grafana.com/docs/)
-- [Node Exporter](https://github.com/prometheus/node_exporter)
-- [cAdvisor](https://github.com/google/cadvisor)
-
----
-**Project:** GCP VM Monitoring with Prometheus, Grafana, Node Exporter, and cAdvisor
+**Submitted by:** Snehal Shinde
